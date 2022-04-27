@@ -1,25 +1,55 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
+from preprocessing import StandartScaler
 
 
 class LinearRegression:
-    def __init__(self, n_iter=1000, learning_rate=0.01, epsillon=0):
+    """
+    Ordinary least squares Linear Regression.
+    LinearRegression fits a linear model with coefficients w = (w1, ..., wp)
+    to minimize the residual sum of squares between the observed targets in
+    the dataset, and the targets predicted by the linear approximation.
+
+    Parameters
+    ----------
+    normalize : bool, default=False
+        If True, the regressors X will be normalized before regression by
+        subtracting the mean and dividing by the l2-norm.
+        If you wish to standardize, please use
+        :class:`~AI_learn.preprocessing.StandardScaler` before calling ``fit``
+        on an estimator with ``normalize=False``.
+
+    n_iter: int, default=1000
+        Fit's number of iteration
+
+    learning_rate: float, default=0.01
+
+    Attributes
+    ----------
+    coef_ : array of shape (n_features, 1)
+        Estimated coefficients for the linear regression problem.
+        This is a 1D array of length n_features.
+
+    bias_ : float
+        Estimated bias for the linear regression problem.
+    """
+    def __init__(self, n_iter=1000, learning_rate=0.01,  normalize=False):
         self.coef_ = None
         self.bias_ = None
         self.learning_rate_ = learning_rate
         self.n_iter_ = n_iter
         self.loss_ = []
         self.acc_ = []
-        self.epsillon_ = epsillon
         self._X = None
         self._y = None
+        self.normalize_ = normalize
 
     def predict(self, X):
         return X.dot(self.coef_) + self.bias_
 
     def quadratics_loss(self, y, A):
-        return 1 / len(y) * np.sum((y - (A + self.epsillon_))**2)
+        return 1 / len(y) * np.sum((y - (A))**2)
 
     def score(self, X, y_true):
         y_pred = self.predict(X)
@@ -27,12 +57,12 @@ class LinearRegression:
         v = (((y_true - y_true.mean()) ** 2).sum())
         return 1 - (u / v)
 
-    def fit(self, X, y, test_size=0.2,random_state=None, normalize=False):
+    def fit(self, X, y, test_size=0.2, random_state=None):
         self.coef_ = np.random.randn(X.shape[1], 1)
         self.bias_ = np.random.randn(1)
 
-        if normalize == True:
-            X = (X - X.mean()) / X.std()
+        if self.normalize_ == True:
+            X = StandartScaler(X)
         
         self._X = X
         self._y = y
@@ -51,7 +81,6 @@ class LinearRegression:
             if i % 10 == 0:
                 self.loss_.append(self.quadratics_loss(y_train, A))
                 self.acc_.append(self.score(X_test, y_test))
-        print(self.acc_)
     
     def display_train(self):
         fig, ax = plt.subplots(1, 3)

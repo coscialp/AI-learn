@@ -1,0 +1,7 @@
+"""
+The :mod:`AI_learn.preprocessing` module includes scaling, centering,
+normalization, binarization methods.
+"""
+
+from .scaler import StandartScaler
+from .one_hot import one_hot

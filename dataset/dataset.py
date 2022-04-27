@@ -37,10 +37,3 @@ def load_dataset(filename, y_name, type=CLASSIFIER):
     dataset.target = np.array(y, dtype=float)
     dataset.target = np.reshape(dataset.target, (dataset.target.shape[0], 1))
     return dataset
-
-
-def one_hot(y):
-    y_one_hot = np.zeros((y.shape[0], np.max(y) + 1), dtype=int)
-    for i, val in enumerate(y):
-        y_one_hot[i, val] = 1
-    return y_one_hot
