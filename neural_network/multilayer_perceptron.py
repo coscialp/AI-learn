@@ -80,7 +80,9 @@ class MLPClassifier(BaseMLP):
         return self.predict_proba(X) >= 0.5
 
     def score(self, X, y):
-        return np.sum(np.equal(y, self.predict(X))) / len(y)
+        sum = np.sum(np.equal(y, self.predict(X)))
+        acc = sum / y.shape[1]
+        return acc
 
     def fit(self, X, y, test_size=0.2, random_state=None):
         dimensions = list(self.hidden_layers_)
