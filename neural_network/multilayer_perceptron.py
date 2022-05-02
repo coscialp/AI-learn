@@ -4,6 +4,7 @@ Multi-layer Perceptron
 
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
 
 
 class BaseMLP:
@@ -12,6 +13,7 @@ class BaseMLP:
         self.n_iter_ = n_iter
         self.learning_rate_ = learning_rate
         self.loss_ = []
+        self.val_loss_ = []
         self.acc_ = []
         self._X = None
         self._y = None
@@ -80,7 +82,7 @@ class MLPClassifier(BaseMLP):
     def score(self, X, y):
         return np.sum(np.equal(y, self.predict(X))) / len(y)
 
-    def fit(self, X, y):
+    def fit(self, X, y, test_size=0.2, random_state=None):
         dimensions = list(self.hidden_layers_)
         dimensions.insert(0, X.shape[0])
         dimensions.append(y.shape[0])
@@ -89,15 +91,20 @@ class MLPClassifier(BaseMLP):
         self._y = y
         self._initialisation(dimensions)
 
+        X_train, X_test, y_train, y_test = train_test_split(X.T, y.T, test_size=test_size, random_state=random_state)
+        X_train, X_test, y_train, y_test = X_train.T, X_test.T, y_train.T, y_test.T
+
         for i in range(self.n_iter_):
-            activations = self._forward_propagation(X)
-            gradients = self._back_propagation(y, activations)
+            activations = self._forward_propagation(X_train)
+            gradients = self._back_propagation(y_train, activations)
             self._update(gradients)
 
             if i % 10 == 0:
+                val_activations = self._forward_propagation(X_test)
                 C = len(self.parameters_) // 2
-                self.loss_.append(self.log_loss(y, activations[f'A{C}']))
-                self.acc_.append(self.score(X, y))
+                self.loss_.append(self.log_loss(y_train, activations[f'A{C}']))
+                self.val_loss_.append(self.log_loss(y_test, val_activations[f'A{C}']))
+                self.acc_.append(self.score(X_test, y_test))
 
     def display_train(self):
         fig, ax = plt.subplots(1, 3)
