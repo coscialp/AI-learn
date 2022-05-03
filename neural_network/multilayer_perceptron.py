@@ -5,11 +5,22 @@ Multi-layer Perceptron
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
+from preprocessing import shuffle_in_unison
 
 
 class BaseMLP:
-    def __init__(self, hidden_layers=(32, 32, 32), n_iter=1000, learning_rate=0.01, normalize=False):
+    def __init__(
+        self,
+        hidden_layers=(32, 32, 32),
+        n_iter=1000,
+        learning_rate=0.01,
+        normalize=False,
+        momentum=0.9,
+        nesterov=True,
+        early_stopping=False
+        ):
         self.parameters_ = {}
+        self.optimizers_ = {}
         self.n_iter_ = n_iter
         self.learning_rate_ = learning_rate
         self.loss_ = []
@@ -19,6 +30,9 @@ class BaseMLP:
         self._y = None
         self.normalize_ = normalize
         self.hidden_layers_ = hidden_layers
+        self.momentum_ = momentum
+        self.nesterov_ = nesterov
+        self.early_stopping_ = early_stopping
 
 
     def _initialisation(self, dimensions):
@@ -27,12 +41,24 @@ class BaseMLP:
         for c in range(1, C):
             self.parameters_[f'W{c}'] = np.random.randn(dimensions[c], dimensions[c - 1])
             self.parameters_[f'b{c}'] = np.random.randn(dimensions[c], 1)
-
+            self.optimizers_[f'mdW{c}'] = 0
+            self.optimizers_[f'mdb{c}'] = 0
+            self.optimizers_[f'vdW{c}'] = 0
+            self.optimizers_[f'vdb{c}'] = 0
 
 
 class MLPClassifier(BaseMLP):
-    def __init__(self, hidden_layers=(32, 32, 32), n_iter=1000, learning_rate=0.01, normalize=False):
-        super().__init__(hidden_layers, n_iter, learning_rate, normalize)
+    def __init__(
+        self,
+        hidden_layers=(32, 32, 32),
+        n_iter=1000,
+        learning_rate=0.01,
+        normalize=False,
+        momentum=0.9,
+        nesterov=True,
+        early_stopping=False
+        ):
+        super().__init__(hidden_layers, n_iter, learning_rate, normalize, momentum, nesterov, early_stopping)
 
     def _forward_propagation(self, X):
         activations = {'A0': X}
@@ -45,7 +71,7 @@ class MLPClassifier(BaseMLP):
 
         return activations
 
-    def _back_propagation(self, y, activations):
+    def _backward_propagation(self, y, activations):
         m = y.shape[1]
         C = len(self.parameters_) // 2
         dZ = activations[f'A{C}'] - y
@@ -60,12 +86,49 @@ class MLPClassifier(BaseMLP):
 
         return gradients
 
-    def _update(self, gradients):
+    def _GD(self, gradients):
         C = len(self.parameters_) // 2
         
         for c in range(1, C + 1):
-            self.parameters_[f'W{c}'] -= self.learning_rate_ * gradients[f'dW{c}']
-            self.parameters_[f'b{c}'] -= self.learning_rate_ * gradients[f'db{c}']
+            self.optimizers_[f'vdW{c}'] = self.momentum_ * self.optimizers_[f'vdW{c}'] + self.learning_rate_ * gradients[f'dW{c}']
+            self.optimizers_[f'vdb{c}'] = self.momentum_ * self.optimizers_[f'vdb{c}'] + self.learning_rate_ * gradients[f'db{c}']
+
+            if self.nesterov_ == True:
+                self.optimizers_[f'vdW{c}'] = self.momentum_ * self.optimizers_[f'vdW{c}'] + self.learning_rate_ * gradients[f'dW{c}']
+                self.optimizers_[f'vdb{c}'] = self.momentum_ * self.optimizers_[f'vdb{c}'] + self.learning_rate_ * gradients[f'db{c}']
+
+            self.parameters_[f'W{c}'] -= self.optimizers_[f'vdW{c}']
+            self.parameters_[f'b{c}'] -= self.optimizers_[f'vdb{c}']
+
+    def _Adam(self, gamma, gradients, curr_epoch):
+        C = len(self.parameters_) // 2
+        
+        for c in range(1, C + 1):
+            self.optimizers_[f'mdW{c}'] = gamma[0] * self.optimizers_[f'mdW{c}'] + (1 - gamma[0]) * gradients[f'dW{c}']
+            self.optimizers_[f'mdb{c}'] = gamma[0] * self.optimizers_[f'mdb{c}'] + (1 - gamma[0]) * gradients[f'db{c}']
+
+            self.optimizers_[f'vdW{c}'] = gamma[1] * self.optimizers_[f'vdW{c}'] + (1 - gamma[1]) * gradients[f'dW{c}']**2
+            self.optimizers_[f'vdb{c}'] = gamma[1] * self.optimizers_[f'vdb{c}'] + (1 - gamma[1]) * gradients[f'db{c}']**2
+
+
+            mdw_corr = self.optimizers_[f'mdW{c}'] / (1 - np.power(gamma[0], curr_epoch + 1))
+            mdb_corr = self.optimizers_[f'mdb{c}'] / (1 - np.power(gamma[0], curr_epoch + 1))
+
+            vdw_corr = self.optimizers_[f'vdW{c}'] / (1 - np.power(gamma[1], curr_epoch + 1))
+            vdb_corr = self.optimizers_[f'vdb{c}'] / (1 - np.power(gamma[1], curr_epoch + 1))
+
+            self.parameters_[f'W{c}'] -= (self.learning_rate_ / np.sqrt(vdw_corr + 1e-08)) * mdw_corr
+            self.parameters_[f'b{c}'] -= (self.learning_rate_ / np.sqrt(vdb_corr + 1e-08)) * mdb_corr
+
+    def _RMSprop(self, beta, gradients):
+        C = len(self.parameters_) // 2
+        
+        for c in range(1, C + 1):
+            self.optimizers_[f'vdW{c}'] = beta * self.optimizers_[f'vdW{c}'] + (1 - beta) * gradients[f'dW{c}']**2
+            self.optimizers_[f'vdb{c}'] = beta * self.optimizers_[f'vdb{c}'] + (1 - beta) * gradients[f'db{c}']**2
+
+            self.parameters_[f'W{c}'] -= (self.learning_rate_ / np.sqrt(self.optimizers_[f'vdW{c}'] + 1e-08)) * gradients[f'dW{c}']
+            self.parameters_[f'b{c}'] -= (self.learning_rate_ / np.sqrt(self.optimizers_[f'vdb{c}'] + 1e-08)) * gradients[f'db{c}']
 
     def log_loss(self, y, A):
         return 1 / len(y) * np.sum(-y * np.log(A) - (1 - y) * np.log(1 - A))
@@ -84,7 +147,7 @@ class MLPClassifier(BaseMLP):
         acc = sum / y.shape[1]
         return acc
 
-    def fit(self, X, y, test_size=0.2, random_state=None):
+    def fit(self, X, y, solver='adam', gamma=(0.9, 0.999), beta=0.9, train_size=0.5, test_size=0.2, random_state=None):
         dimensions = list(self.hidden_layers_)
         dimensions.insert(0, X.shape[0])
         dimensions.append(y.shape[0])
@@ -96,17 +159,33 @@ class MLPClassifier(BaseMLP):
         X_train, X_test, y_train, y_test = train_test_split(X.T, y.T, test_size=test_size, random_state=random_state)
         X_train, X_test, y_train, y_test = X_train.T, X_test.T, y_train.T, y_test.T
 
+        size = int(X_train.shape[1] * train_size)
         for i in range(self.n_iter_):
-            activations = self._forward_propagation(X_train)
-            gradients = self._back_propagation(y_train, activations)
-            self._update(gradients)
+            tmpX, tmpY = shuffle_in_unison(X_train, y_train)
+            tmpX = np.array(tmpX[:size]).T
+            tmpY = np.array(tmpY[:size]).T
+
+            tmpParameters = self.parameters_
+
+            activations = self._forward_propagation(tmpX)
+            gradients = self._backward_propagation(tmpY, activations)
+            if solver == 'sgd':
+                self._GD(gradients)
+            elif solver == 'adam':
+                self._Adam(gamma, gradients, i)
+            elif solver == 'RMSprop':
+                self._RMSprop(beta, gradients)
 
             if i % 10 == 0:
                 val_activations = self._forward_propagation(X_test)
                 C = len(self.parameters_) // 2
-                self.loss_.append(self.log_loss(y_train, activations[f'A{C}']))
+                self.loss_.append(self.log_loss(tmpY, activations[f'A{C}']))
                 self.val_loss_.append(self.log_loss(y_test, val_activations[f'A{C}']))
                 self.acc_.append(self.score(X_test, y_test))
+
+                if self.early_stopping_ == True and i != 0 and self.val_loss_[i // 10] > self.val_loss_[i // 10 - 1] and self.acc_[i // 10] < self.acc_[i // 10 - 1]:
+                    self.parameters_ == tmpParameters
+                    break
 
     def display_train(self):
         fig, ax = plt.subplots(1, 3)
