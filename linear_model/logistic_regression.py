@@ -1,8 +1,7 @@
-from calendar import c
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
-from preprocessing import StandartScaler
+from ..preprocessing import StandartScaler
 
 class LogisticRegression:
     def __init__(self, n_iter=1000, learning_rate=0.01, normalize=False, multi_class=False):

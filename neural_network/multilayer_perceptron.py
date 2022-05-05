@@ -5,7 +5,9 @@ Multi-layer Perceptron
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
-from preprocessing import shuffle_in_unison
+
+from AI_learn.preprocessing.scaler import StandartScaler
+from ..preprocessing import shuffle_in_unison
 
 
 class BaseMLP:
@@ -152,8 +154,14 @@ class MLPClassifier(BaseMLP):
         dimensions.insert(0, X.shape[0])
         dimensions.append(y.shape[0])
 
+        if self.normalize_ == True:
+            X = StandartScaler(X)
+
         self._X = X
         self._y = y
+        self.acc_ = []
+        self.loss_ = []
+        self.val_loss_ = []
         self._initialisation(dimensions)
 
         X_train, X_test, y_train, y_test = train_test_split(X.T, y.T, test_size=test_size, random_state=random_state)
