@@ -31,6 +31,8 @@ class BaseMLP:
         self._X = None
         self._y = None
         self.normalize_ = normalize
+        self.normalize_mean_ = 0
+        self.normalize_std_ = 0
         self.hidden_layers_ = hidden_layers
         self.momentum_ = momentum
         self.nesterov_ = nesterov
@@ -155,6 +157,8 @@ class MLPClassifier(BaseMLP):
         dimensions.append(y.shape[0])
 
         if self.normalize_ == True:
+            self.normalize_mean_ = X.mean()
+            self.normalize_std_ = X.std()
             X = StandartScaler(X)
 
         self._X = X
@@ -191,8 +195,8 @@ class MLPClassifier(BaseMLP):
                 self.val_loss_.append(self.log_loss(y_test, val_activations[f'A{C}']))
                 self.acc_.append(self.score(X_test, y_test))
 
-                if self.early_stopping_ == True and i != 0 and self.val_loss_[i // 10] > self.val_loss_[i // 10 - 1] and self.acc_[i // 10] < self.acc_[i // 10 - 1]:
-                    self.parameters_ == tmpParameters
+                if self.early_stopping_ == True and i // 10 > 10 and self.val_loss_[i // 10] > self.val_loss_[i // 10 - 10]:
+                    self.parameters_ = tmpParameters
                     break
 
     def display_train(self):
