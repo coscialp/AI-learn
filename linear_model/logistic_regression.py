@@ -24,7 +24,6 @@ class LogisticRegression:
         if self.multi_class_ == True:
             return np.argmax(self.predict_proba(X), axis=1)
         else:
-            print(self.predict_proba(X).shape)
             return self.predict_proba(X) >= 0.5 
 
     def log_loss(self, y, A):

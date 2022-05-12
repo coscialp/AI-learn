@@ -2,12 +2,12 @@
 Multi-layer Perceptron
 """
 
+
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 
-from AI_learn.preprocessing.scaler import StandartScaler
-from ..preprocessing import shuffle_in_unison
+from ..preprocessing import shuffle_in_unison, StandartScaler
 
 
 class BaseMLP:
@@ -19,7 +19,8 @@ class BaseMLP:
         normalize=False,
         momentum=0.9,
         nesterov=True,
-        early_stopping=False
+        early_stopping=False,
+        multiclass=False
         ):
         self.parameters_ = {}
         self.optimizers_ = {}
@@ -37,6 +38,7 @@ class BaseMLP:
         self.momentum_ = momentum
         self.nesterov_ = nesterov
         self.early_stopping_ = early_stopping
+        self.multiclass_ = multiclass
 
 
     def _initialisation(self, dimensions):
@@ -60,9 +62,19 @@ class MLPClassifier(BaseMLP):
         normalize=False,
         momentum=0.9,
         nesterov=True,
-        early_stopping=False
+        early_stopping=False,
+        multiclass=False
         ):
-        super().__init__(hidden_layers, n_iter, learning_rate, normalize, momentum, nesterov, early_stopping)
+        super().__init__(
+            hidden_layers,
+            n_iter,
+            learning_rate,
+            normalize,
+            momentum,
+            nesterov,
+            early_stopping,
+            multiclass
+            )
 
     def _forward_propagation(self, X):
         activations = {'A0': X}
@@ -144,10 +156,15 @@ class MLPClassifier(BaseMLP):
         return Af
 
     def predict(self, X):
+        if self.multiclass_ == True:
+            return np.argmax(self.predict_proba(X), axis=0)
         return self.predict_proba(X) >= 0.5
 
     def score(self, X, y):
-        sum = np.sum(np.equal(y, self.predict(X)))
+        if self.multiclass_ == True:
+            sum =  np.sum(np.equal(np.argmax(y, axis=0), self.predict(X)))
+        else:
+            sum = np.sum(np.equal(y, self.predict(X)))
         acc = sum / y.shape[1]
         return acc
 
@@ -221,7 +238,7 @@ class MLPClassifier(BaseMLP):
         for i in range(1, self._X.shape[0]):
             dim.append(X1.ravel())
 
-        XX = np.vstack(tuple(dim))
+        XX = np.vstack(tuple(dim)).T
 
         Z = self.predict(XX)
 
