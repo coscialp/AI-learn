@@ -76,14 +76,23 @@ class MLPClassifier(BaseMLP):
             multiclass
             )
 
+    def _softmax(self, Z):
+        return np.exp(Z) / np.sum(np.exp(Z), axis=0)
+
     def _forward_propagation(self, X):
         activations = {'A0': X}
 
         C = len(self.parameters_) // 2
 
-        for c in range(1, C + 1):
+        for c in range(1, C):
             Z = self.parameters_[f'W{c}'].dot(activations[f'A{c - 1}']) + self.parameters_[f'b{c}']
             activations[f'A{c}'] = 1 / (1 + np.exp(-Z))
+
+        Z = self.parameters_[f'W{C}'].dot(activations[f'A{C - 1}']) + self.parameters_[f'b{C}']
+        if self.multiclass_ == True:
+            activations[f'A{C}'] = self._softmax(Z)
+        else:
+            activations[f'A{C}'] = 1 / (1 + np.exp(-Z))
 
         return activations
 
