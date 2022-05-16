@@ -156,7 +156,7 @@ class MLPClassifier(BaseMLP):
             self.parameters_[f'b{c}'] -= (self.learning_rate_ / np.sqrt(self.optimizers_[f'vdb{c}'] + 1e-08)) * gradients[f'db{c}']
 
     def log_loss(self, y, A):
-        return 1 / len(y) * np.sum(-y * np.log(A) - (1 - y) * np.log(1 - A))
+        return 1 / y.shape[1] * np.sum(-y * np.log(A) - (1 - y) * np.log(1 - A))
 
     def predict_proba(self, X):
         activations = self._forward_propagation(X)
@@ -178,7 +178,10 @@ class MLPClassifier(BaseMLP):
         return acc
 
     def fit(self, X, y, solver='adam', gamma=(0.9, 0.999), beta=0.9, train_size=0.5, test_size=0.2, random_state=None):
-        dimensions = list(self.hidden_layers_)
+        try:
+            dimensions = list(self.hidden_layers_)
+        except TypeError:
+            dimensions = [self.hidden_layers_]
         dimensions.insert(0, X.shape[0])
         dimensions.append(y.shape[0])
 

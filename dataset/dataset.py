@@ -11,11 +11,14 @@ class Dataset:
         self.targets_name = []
 
 
-def load_dataset(filename, y_name, type=CLASSIFIER, indesirable_feature=[]):
+def load_dataset(filename, y_name, type=CLASSIFIER, indesirable_feature=[], features_name=None):
     dataset = Dataset()
     with open(filename, 'r', newline='') as file:
         csvfile = csv.reader(file)
-        first_row = next(csvfile)
+        if features_name == None:
+            first_row = next(csvfile)
+        else:
+            first_row = features_name
         y_index = -1
         index_idx = []
         for index, name in enumerate(first_row):
