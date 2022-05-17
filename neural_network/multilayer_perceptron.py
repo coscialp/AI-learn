@@ -177,7 +177,7 @@ class MLPClassifier(BaseMLP):
         acc = sum / y.shape[1]
         return acc
 
-    def fit(self, X, y, solver='adam', gamma=(0.9, 0.999), beta=0.9, train_size=0.5, test_size=0.2, random_state=None):
+    def fit(self, X, y, solver='adam', gamma=(0.9, 0.999), beta=0.9, batch_size=1, test_size=0.2, random_state=None):
         try:
             dimensions = list(self.hidden_layers_)
         except TypeError:
@@ -200,22 +200,26 @@ class MLPClassifier(BaseMLP):
         X_train, X_test, y_train, y_test = train_test_split(X.T, y.T, test_size=test_size, random_state=random_state)
         X_train, X_test, y_train, y_test = X_train.T, X_test.T, y_train.T, y_test.T
 
-        size = int(X_train.shape[1] * train_size)
         for i in range(self.n_iter_):
-            tmpX, tmpY = shuffle_in_unison(X_train, y_train)
-            tmpX = np.array(tmpX[:size]).T
-            tmpY = np.array(tmpY[:size]).T
+            size = 0
+            while size < X_train.shape[1]:
+                try:
+                    tmpX = np.array(X_train[:, size:size+batch_size])
+                    tmpY = np.array(y_train[:, size:size+batch_size])
+                except:
+                    tmpX = np.array(X_train[:, size:])
+                    tmpY = np.array(y_train[:, size:])
+                size += batch_size
+                tmpParameters = self.parameters_
 
-            tmpParameters = self.parameters_
-
-            activations = self._forward_propagation(tmpX)
-            gradients = self._backward_propagation(tmpY, activations)
-            if solver == 'sgd':
-                self._GD(gradients)
-            elif solver == 'adam':
-                self._Adam(gamma, gradients, i)
-            elif solver == 'RMSprop':
-                self._RMSprop(beta, gradients)
+                activations = self._forward_propagation(tmpX)
+                gradients = self._backward_propagation(tmpY, activations)
+                if solver == 'sgd':
+                    self._GD(gradients)
+                elif solver == 'adam':
+                    self._Adam(gamma, gradients, i)
+                elif solver == 'RMSprop':
+                    self._RMSprop(beta, gradients)
 
             if i % 10 == 0:
                 val_activations = self._forward_propagation(X_test)
@@ -223,7 +227,6 @@ class MLPClassifier(BaseMLP):
                 self.loss_.append(self.log_loss(tmpY, activations[f'A{C}']))
                 self.val_loss_.append(self.log_loss(y_test, val_activations[f'A{C}']))
                 self.acc_.append(self.score(X_test, y_test))
-
                 if self.early_stopping_ == True and i // 10 > 10 and self.val_loss_[i // 10] > self.val_loss_[i // 10 - 10]:
                     self.parameters_ = tmpParameters
                     break
