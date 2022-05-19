@@ -9,23 +9,46 @@ from sklearn.model_selection import train_test_split
 
 from ..preprocessing import shuffle_in_unison, StandartScaler
 
+ACTIVATION = {
+    'relu': lambda Z: np.where(Z <= 0, 0, Z),
+    'logistic': lambda Z: 1 / (1 + np.exp(-Z)),
+    'tanh': lambda Z: np.tanh(Z),
+    'identity': lambda Z: Z,
+    'softmax': lambda Z: np.exp(Z) / np.sum(np.exp(Z), axis=0)
+}
+
+DERIVATIVES = {
+    'relu': lambda delta, Z: delta * np.where(Z <= 0, 0, 1),
+    'logistic': lambda delta, Z: delta * Z * (1 - Z),
+    'tanh': lambda delta, Z: delta * (1 - Z**2),
+    'identity': lambda delta, Z: delta,
+}
 
 class BaseMLP:
+
     def __init__(
         self,
         hidden_layers=(32, 32, 32),
         n_iter=1000,
-        learning_rate=0.01,
+        learning_rate_init=0.01,
+        learning_rate='constant',
         normalize=False,
         momentum=0.9,
         nesterov=True,
         early_stopping=False,
-        multiclass=False
+        multiclass=False,
+        shuffle=True,
+        activation='relu',
+        out_activation='logistic',
+        solver='adam',
+        batch_size=16,
+        gamma=(0.9, 0.999),
+        beta=0.9,
         ):
         self.parameters_ = {}
         self.optimizers_ = {}
         self.n_iter_ = n_iter
-        self.learning_rate_ = learning_rate
+        self.learning_rate_ = learning_rate_init
         self.loss_ = []
         self.val_loss_ = []
         self.acc_ = []
@@ -39,14 +62,28 @@ class BaseMLP:
         self.nesterov_ = nesterov
         self.early_stopping_ = early_stopping
         self.multiclass_ = multiclass
+        self.evoluate_lr_ = learning_rate
+        self.shuffle_ = shuffle
+        self.activation_ = activation
+        self.out_activation_ = out_activation
+        self.solver_ = solver
+        self.batch_size_ = batch_size
+        self.beta_ = beta
+        self.gamma_ = gamma
+        self.curr_epoch_ = 0
 
 
     def _initialisation(self, dimensions):
         C = len(dimensions)
 
+        factor = 6.0 if self.activation_ != 'logistic' else 2.0
+
         for c in range(1, C):
-            self.parameters_[f'W{c}'] = np.random.randn(dimensions[c], dimensions[c - 1])
-            self.parameters_[f'b{c}'] = np.random.randn(dimensions[c], 1)
+            init_bound = (factor / (dimensions[c - 1] + dimensions[c])) ** 0.5
+            # self.parameters_[f'W{c}'] = np.random.uniform(-1 / (dimensions[c - 1] ** 0.5), 1 / (dimensions[c - 1] ** 0.5), (dimensions[c], dimensions[c - 1]))
+            # self.parameters_[f'b{c}'] = np.random.uniform(-1 / (dimensions[c - 1] ** 0.5), 1 / (dimensions[c - 1] ** 0.5), (dimensions[c], 1))
+            self.parameters_[f'W{c}'] = np.random.uniform(-init_bound, init_bound, (dimensions[c], dimensions[c - 1]))
+            self.parameters_[f'b{c}'] = np.random.uniform(-init_bound, init_bound, (dimensions[c], 1))
             self.optimizers_[f'mdW{c}'] = 0
             self.optimizers_[f'mdb{c}'] = 0
             self.optimizers_[f'vdW{c}'] = 0
@@ -54,30 +91,53 @@ class BaseMLP:
 
 
 class MLPClassifier(BaseMLP):
+    """
+    
+    """
     def __init__(
         self,
         hidden_layers=(32, 32, 32),
         n_iter=1000,
-        learning_rate=0.01,
+        learning_rate_init=0.01,
+        learning_rate='constant',
         normalize=False,
         momentum=0.9,
         nesterov=True,
         early_stopping=False,
-        multiclass=False
+        multiclass=False,
+        shuffle=True,
+        activation='relu',
+        out_activation='sigmoid',
+        solver='adam',
+        batch_size=16,
+        gamma=(0.9, 0.999),
+        beta=0.9,
         ):
+
+        self.SOLVER = {
+            'adam': self._Adam,
+            'sgd': self._GD,
+            'RMSprop': self._RMSprop
+        }
+
         super().__init__(
             hidden_layers,
             n_iter,
+            learning_rate_init,
             learning_rate,
             normalize,
             momentum,
             nesterov,
             early_stopping,
-            multiclass
+            multiclass,
+            shuffle,
+            activation,
+            out_activation,
+            solver,
+            batch_size,
+            gamma,
+            beta,
             )
-
-    def _softmax(self, Z):
-        return np.exp(Z) / np.sum(np.exp(Z), axis=0)
 
     def _forward_propagation(self, X):
         activations = {'A0': X}
@@ -86,13 +146,10 @@ class MLPClassifier(BaseMLP):
 
         for c in range(1, C):
             Z = self.parameters_[f'W{c}'].dot(activations[f'A{c - 1}']) + self.parameters_[f'b{c}']
-            activations[f'A{c}'] = 1 / (1 + np.exp(-Z))
+            activations[f'A{c}'] = ACTIVATION[self.activation_](Z)
 
         Z = self.parameters_[f'W{C}'].dot(activations[f'A{C - 1}']) + self.parameters_[f'b{C}']
-        if self.multiclass_ == True:
-            activations[f'A{C}'] = self._softmax(Z)
-        else:
-            activations[f'A{C}'] = 1 / (1 + np.exp(-Z))
+        activations[f'A{C}'] = ACTIVATION[self.out_activation_](Z)
 
         return activations
 
@@ -107,7 +164,7 @@ class MLPClassifier(BaseMLP):
             gradients[f'dW{c}'] = 1 / m * np.dot(dZ, activations[f'A{c - 1}'].T)
             gradients[f'db{c}'] = 1 / m * np.sum(dZ, axis=1, keepdims=True)
             if c > 1:
-                dZ = np.dot(self.parameters_[f'W{c}'].T, dZ) * activations[f'A{c - 1}'] * (1 - activations[f'A{c - 1}'])
+                dZ = DERIVATIVES[self.activation_](np.dot(self.parameters_[f'W{c}'].T, dZ), activations[f'A{c - 1}'])
 
         return gradients
 
@@ -125,32 +182,32 @@ class MLPClassifier(BaseMLP):
             self.parameters_[f'W{c}'] -= self.optimizers_[f'vdW{c}']
             self.parameters_[f'b{c}'] -= self.optimizers_[f'vdb{c}']
 
-    def _Adam(self, gamma, gradients, curr_epoch):
+    def _Adam(self, gradients):
         C = len(self.parameters_) // 2
         
         for c in range(1, C + 1):
-            self.optimizers_[f'mdW{c}'] = gamma[0] * self.optimizers_[f'mdW{c}'] + (1 - gamma[0]) * gradients[f'dW{c}']
-            self.optimizers_[f'mdb{c}'] = gamma[0] * self.optimizers_[f'mdb{c}'] + (1 - gamma[0]) * gradients[f'db{c}']
+            self.optimizers_[f'mdW{c}'] = self.gamma_[0] * self.optimizers_[f'mdW{c}'] + (1 - self.gamma_[0]) * gradients[f'dW{c}']
+            self.optimizers_[f'mdb{c}'] = self.gamma_[0] * self.optimizers_[f'mdb{c}'] + (1 - self.gamma_[0]) * gradients[f'db{c}']
 
-            self.optimizers_[f'vdW{c}'] = gamma[1] * self.optimizers_[f'vdW{c}'] + (1 - gamma[1]) * gradients[f'dW{c}']**2
-            self.optimizers_[f'vdb{c}'] = gamma[1] * self.optimizers_[f'vdb{c}'] + (1 - gamma[1]) * gradients[f'db{c}']**2
+            self.optimizers_[f'vdW{c}'] = self.gamma_[1] * self.optimizers_[f'vdW{c}'] + (1 - self.gamma_[1]) * gradients[f'dW{c}']**2
+            self.optimizers_[f'vdb{c}'] = self.gamma_[1] * self.optimizers_[f'vdb{c}'] + (1 - self.gamma_[1]) * gradients[f'db{c}']**2
 
 
-            mdw_corr = self.optimizers_[f'mdW{c}'] / (1 - np.power(gamma[0], curr_epoch + 1))
-            mdb_corr = self.optimizers_[f'mdb{c}'] / (1 - np.power(gamma[0], curr_epoch + 1))
+            mdw_corr = self.optimizers_[f'mdW{c}'] / (1 - np.power(self.gamma_[0], self.curr_epoch_ + 1))
+            mdb_corr = self.optimizers_[f'mdb{c}'] / (1 - np.power(self.gamma_[0], self.curr_epoch_ + 1))
 
-            vdw_corr = self.optimizers_[f'vdW{c}'] / (1 - np.power(gamma[1], curr_epoch + 1))
-            vdb_corr = self.optimizers_[f'vdb{c}'] / (1 - np.power(gamma[1], curr_epoch + 1))
+            vdw_corr = self.optimizers_[f'vdW{c}'] / (1 - np.power(self.gamma_[1], self.curr_epoch_ + 1))
+            vdb_corr = self.optimizers_[f'vdb{c}'] / (1 - np.power(self.gamma_[1], self.curr_epoch_ + 1))
 
             self.parameters_[f'W{c}'] -= (self.learning_rate_ / np.sqrt(vdw_corr + 1e-08)) * mdw_corr
             self.parameters_[f'b{c}'] -= (self.learning_rate_ / np.sqrt(vdb_corr + 1e-08)) * mdb_corr
 
-    def _RMSprop(self, beta, gradients):
+    def _RMSprop(self, gradients):
         C = len(self.parameters_) // 2
         
         for c in range(1, C + 1):
-            self.optimizers_[f'vdW{c}'] = beta * self.optimizers_[f'vdW{c}'] + (1 - beta) * gradients[f'dW{c}']**2
-            self.optimizers_[f'vdb{c}'] = beta * self.optimizers_[f'vdb{c}'] + (1 - beta) * gradients[f'db{c}']**2
+            self.optimizers_[f'vdW{c}'] = self.beta_ * self.optimizers_[f'vdW{c}'] + (1 - self.beta_) * gradients[f'dW{c}']**2
+            self.optimizers_[f'vdb{c}'] = self.beta_ * self.optimizers_[f'vdb{c}'] + (1 - self.beta_) * gradients[f'db{c}']**2
 
             self.parameters_[f'W{c}'] -= (self.learning_rate_ / np.sqrt(self.optimizers_[f'vdW{c}'] + 1e-08)) * gradients[f'dW{c}']
             self.parameters_[f'b{c}'] -= (self.learning_rate_ / np.sqrt(self.optimizers_[f'vdb{c}'] + 1e-08)) * gradients[f'db{c}']
@@ -177,7 +234,13 @@ class MLPClassifier(BaseMLP):
         acc = sum / y.shape[1]
         return acc
 
-    def fit(self, X, y, solver='adam', gamma=(0.9, 0.999), beta=0.9, batch_size=1, test_size=0.2, random_state=None):
+    def fit(
+        self,
+        X,
+        y,
+        test_size=0.2,
+        random_state=None,
+        ):
         try:
             dimensions = list(self.hidden_layers_)
         except TypeError:
@@ -201,25 +264,27 @@ class MLPClassifier(BaseMLP):
         X_train, X_test, y_train, y_test = X_train.T, X_test.T, y_train.T, y_test.T
 
         for i in range(self.n_iter_):
+            self.curr_epoch = i
             size = 0
+            if self.shuffle_:
+                X_train, y_train = shuffle_in_unison(X_train, y_train)
+                X_train, y_train = X_train.T, y_train.T
             while size < X_train.shape[1]:
                 try:
-                    tmpX = np.array(X_train[:, size:size+batch_size])
-                    tmpY = np.array(y_train[:, size:size+batch_size])
+                    tmpX = np.array(X_train[:, size:size + self.batch_size_])
+                    tmpY = np.array(y_train[:, size:size + self.batch_size_])
                 except:
                     tmpX = np.array(X_train[:, size:])
                     tmpY = np.array(y_train[:, size:])
-                size += batch_size
+                size += self.batch_size_
                 tmpParameters = self.parameters_
 
                 activations = self._forward_propagation(tmpX)
                 gradients = self._backward_propagation(tmpY, activations)
-                if solver == 'sgd':
-                    self._GD(gradients)
-                elif solver == 'adam':
-                    self._Adam(gamma, gradients, i)
-                elif solver == 'RMSprop':
-                    self._RMSprop(beta, gradients)
+                self.SOLVER[self.solver_](gradients)
+
+            if  self.solver_ == 'sgd' and self.evoluate_lr_ == 'invscaling':
+                self.learning_rate_ /= 1.01
 
             if i % 10 == 0:
                 val_activations = self._forward_propagation(X_test)
@@ -230,39 +295,6 @@ class MLPClassifier(BaseMLP):
                 if self.early_stopping_ == True and i // 10 > 10 and self.val_loss_[i // 10] > self.val_loss_[i // 10 - 10]:
                     self.parameters_ = tmpParameters
                     break
-
-    def display_train(self):
-        fig, ax = plt.subplots(1, 3)
-        ax[0].plot(self.loss_, label='Loss')
-        ax[1].plot(self.acc_, label='Accuracy')
-        ax[2].scatter(self._X[0, :], self._X[1, :], c=self._y, s=50)
-        x0_lim = ax[2].get_xlim()
-        x1_lim = ax[2].get_ylim()
-
-        resolution = 100
-
-        x0 = np.linspace(x0_lim[0], x0_lim[1], resolution)
-        x1 = np.linspace(x1_lim[0], x1_lim[1], resolution)
-
-        X0, X1 = np.meshgrid(x0, x1)
-
-        # dim = [X0.ravel(), X1.ravel()]
-
-        dim = [X0.ravel()]
-
-        for i in range(1, self._X.shape[0]):
-            dim.append(X1.ravel())
-
-        XX = np.vstack(tuple(dim)).T
-
-        Z = self.predict(XX)
-
-        Z = Z.reshape((resolution, resolution))
-
-        ax[2].pcolormesh(X0, X1, Z, alpha=0.3, zorder=-1)
-        ax[2].contour(X0, X1, Z, colors='green')
-
-
 
 
     
