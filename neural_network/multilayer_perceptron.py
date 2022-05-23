@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 
-from ..preprocessing import shuffle_in_unison, StandartScaler
+from ..preprocessing import shuffle_in_unison, StandartScaler, MinMaxScaler
 
 ACTIVATION = {
     'relu': lambda Z: np.where(Z <= 0, 0, Z),
@@ -44,6 +44,7 @@ class BaseMLP:
         batch_size=16,
         gamma=(0.9, 0.999),
         beta=0.9,
+        epsilon=1e-08
         ):
         self.parameters_ = {}
         self.optimizers_ = {}
@@ -71,6 +72,7 @@ class BaseMLP:
         self.beta_ = beta
         self.gamma_ = gamma
         self.curr_epoch_ = 0
+        self.epsilon_ = epsilon
 
 
     def _initialisation(self, dimensions):
@@ -112,6 +114,7 @@ class MLPClassifier(BaseMLP):
         batch_size=16,
         gamma=(0.9, 0.999),
         beta=0.9,
+        epsilon=1e-08
         ):
 
         self.SOLVER = {
@@ -137,6 +140,7 @@ class MLPClassifier(BaseMLP):
             batch_size,
             gamma,
             beta,
+            epsilon
             )
 
     def _forward_propagation(self, X):
@@ -199,8 +203,8 @@ class MLPClassifier(BaseMLP):
             vdw_corr = self.optimizers_[f'vdW{c}'] / (1 - np.power(self.gamma_[1], self.curr_epoch_ + 1))
             vdb_corr = self.optimizers_[f'vdb{c}'] / (1 - np.power(self.gamma_[1], self.curr_epoch_ + 1))
 
-            self.parameters_[f'W{c}'] -= (self.learning_rate_ / np.sqrt(vdw_corr + 1e-08)) * mdw_corr
-            self.parameters_[f'b{c}'] -= (self.learning_rate_ / np.sqrt(vdb_corr + 1e-08)) * mdb_corr
+            self.parameters_[f'W{c}'] -= (self.learning_rate_ / np.sqrt(vdw_corr + self.epsilon_)) * mdw_corr
+            self.parameters_[f'b{c}'] -= (self.learning_rate_ / np.sqrt(vdb_corr + self.epsilon_)) * mdb_corr
 
     def _RMSprop(self, gradients):
         C = len(self.parameters_) // 2
@@ -249,9 +253,13 @@ class MLPClassifier(BaseMLP):
         dimensions.append(y.shape[0])
 
         if self.normalize_ == True:
-            self.normalize_mean_ = X.mean()
-            self.normalize_std_ = X.std()
+            self.normalize_mean_ = X.mean(axis=1)
+            self.normalize_std_ = X.std(axis=1)
             X = StandartScaler(X)
+
+            # self.normalize_mean_ = X.min(axis=1)
+            # self.normalize_std_ = X.max(axis=1)
+            # X = MinMaxScaler(X)
 
         self._X = X
         self._y = y
@@ -286,15 +294,15 @@ class MLPClassifier(BaseMLP):
             if  self.solver_ == 'sgd' and self.evoluate_lr_ == 'invscaling':
                 self.learning_rate_ /= 1.01
 
-            if i % 10 == 0:
-                val_activations = self._forward_propagation(X_test)
-                C = len(self.parameters_) // 2
-                self.loss_.append(self.log_loss(tmpY, activations[f'A{C}']))
-                self.val_loss_.append(self.log_loss(y_test, val_activations[f'A{C}']))
-                self.acc_.append(self.score(X_test, y_test))
-                if self.early_stopping_ == True and i // 10 > 10 and self.val_loss_[i // 10] > self.val_loss_[i // 10 - 10]:
-                    self.parameters_ = tmpParameters
-                    break
+            # if i % 10 == 0:
+            val_activations = self._forward_propagation(X_test)
+            C = len(self.parameters_) // 2
+            self.loss_.append(self.log_loss(tmpY, activations[f'A{C}']))
+            self.val_loss_.append(self.log_loss(y_test, val_activations[f'A{C}']))
+            self.acc_.append(self.score(X_test, y_test))
+            if self.early_stopping_ == True and i // 10 > 10 and self.val_loss_[i // 10] > self.val_loss_[i // 10 - 10]:
+                self.parameters_ = tmpParameters
+                break
 
 
     
