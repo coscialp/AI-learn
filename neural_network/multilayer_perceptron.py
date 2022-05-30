@@ -294,13 +294,12 @@ class MLPClassifier(BaseMLP):
             if  self.solver_ == 'sgd' and self.evoluate_lr_ == 'invscaling':
                 self.learning_rate_ /= 1.01
 
-            # if i % 10 == 0:
             val_activations = self._forward_propagation(X_test)
             C = len(self.parameters_) // 2
             self.loss_.append(self.log_loss(tmpY, activations[f'A{C}']))
             self.val_loss_.append(self.log_loss(y_test, val_activations[f'A{C}']))
             self.acc_.append(self.score(X_test, y_test))
-            if self.early_stopping_ == True and i // 10 > 10 and self.val_loss_[i // 10] > self.val_loss_[i // 10 - 10]:
+            if self.early_stopping_ == True and i > 10 and self.val_loss_[i] > self.val_loss_[i - 10]:
                 self.parameters_ = tmpParameters
                 break
 

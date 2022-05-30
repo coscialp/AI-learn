@@ -51,7 +51,7 @@ class Dataset:
             print(v)
 
 
-def load_dataset(filename, y_name, type=CLASSIFIER, indesirable_feature=[], features_name=None):
+def load_dataset(filename, y_name, target_order, type=CLASSIFIER, indesirable_feature=[], features_name=None):
     dataset = Dataset()
     with open(filename, 'r', newline='') as file:
         csvfile = csv.reader(file)
@@ -74,13 +74,12 @@ def load_dataset(filename, y_name, type=CLASSIFIER, indesirable_feature=[], feat
             if type == CLASSIFIER:
                 if row[y_index] not in dataset.targets_name:
                     dataset.targets_name.append(row[y_index])
-                row[y_index] = dataset.targets_name.index(row[y_index])
+                row[y_index] = target_order[row[y_index]]
             y.append(row[y_index])
             row.pop(y_index)
             for i in index_idx:
                 row.pop(i)
             X.append(row)
-
     dataset.data = np.array(X, dtype=float)
     dataset.target = np.array(y, dtype=int)
     dataset.target = np.reshape(dataset.target, (dataset.target.shape[0], 1))
